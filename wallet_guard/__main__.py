@@ -2,7 +2,8 @@
 
   python3 -m wallet_guard evm-approvals --chain base --owner 0x... --from-block N --to-block M
   python3 -m wallet_guard evm-token --chain ethereum --token 0x...
-  python3 -m wallet_guard solana-delegates --owner <address>
+  python3 -m wallet_guard solana-scan --owner <address>          # SPL + Token-2022 account and mint risks
+  python3 -m wallet_guard solana-mint --mint <mint>              # one mint: extensions, authorities, fake stablecoin
   python3 -m wallet_guard serve --pay-to 0x... --price 0.01 --network base   # optional x402 paid API
 """
 from __future__ import annotations
@@ -57,7 +58,8 @@ def main(argv=None):
     a = sub.add_parser('evm-approvals'); a.add_argument('--chain', choices=sorted(rpc.EVM_RPC), required=True)
     a.add_argument('--owner', required=True); a.add_argument('--from-block', type=int, required=True); a.add_argument('--to-block', type=int, required=True)
     t = sub.add_parser('evm-token'); t.add_argument('--chain', choices=sorted(rpc.EVM_RPC), required=True); t.add_argument('--token', required=True)
-    s = sub.add_parser('solana-delegates'); s.add_argument('--owner', required=True)
+    s = sub.add_parser('solana-scan', aliases=['solana-delegates']); s.add_argument('--owner', required=True)
+    m = sub.add_parser('solana-mint'); m.add_argument('--mint', required=True)
     v = sub.add_parser('serve'); v.add_argument('--pay-to', required=True); v.add_argument('--price', default='0.01')
     v.add_argument('--network', default='base', choices=sorted(x402.USDC)); v.add_argument('--port', type=int, default=8402)
     v.add_argument('--host', default='127.0.0.1'); v.add_argument('--facilitator', default='https://x402.org/facilitator')
@@ -67,8 +69,10 @@ def main(argv=None):
             _print(evm.approvals(args.chain, args.owner, args.from_block, args.to_block))
         elif args.cmd == 'evm-token':
             _print(evm.token_info(args.chain, args.token))
-        elif args.cmd == 'solana-delegates':
-            _print(solana.delegates(args.owner))
+        elif args.cmd in ('solana-scan', 'solana-delegates'):
+            _print(solana.scan(args.owner))
+        elif args.cmd == 'solana-mint':
+            _print(solana.mint_report(args.mint))
         else:
             evm._addr(args.pay_to)
             server = http.server.ThreadingHTTPServer((args.host, args.port), make_handler(args.pay_to, args.price, args.network, args.facilitator))

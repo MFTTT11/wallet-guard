@@ -64,19 +64,68 @@ class EvmTest(unittest.TestCase):
             evm.approvals('base', '0x123', 1, 2, call=lambda *a: [])
 
 
-class SolanaTest(unittest.TestCase):
-    def test_delegate_is_reported(self):
+USDG = '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH'
+FAKE = 'FakeMint1111111111111111111111111111111111'
+OWNER_SOL = 'Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb'
+
+
+def ext(_ext, **state):
+    return {'extension': _ext, 'state': state}
+
+
+REGULATED = [ext('permanentDelegate', delegate='Issuer1'), ext('transferHook', authority='A', programId='Hook1'),
+             ext('mintCloseAuthority', closeAuthority='Issuer1')]
+
+
+class SolanaMintTest(unittest.TestCase):
+    def test_unknown_mint_with_token2022_controls_is_high_risk(self):
+        info = {'freezeAuthority': 'F1', 'mintAuthority': 'M1', 'extensions': REGULATED + [
+            ext('transferFeeConfig', newerTransferFee={'transferFeeBasisPoints': 1500}), ext('defaultAccountState', accountState='frozen')]}
+        r = solana.mint_flags(FAKE, info, solana.TOKEN_2022)
+        sev = {f['code']: f['severity'] for f in r['flags']}
+        self.assertEqual(sev, {'permanent_delegate': 'high', 'transfer_hook': 'medium', 'close_authority': 'medium',
+                               'freeze_authority': 'medium', 'mint_authority': 'low', 'transfer_fee': 'high', 'default_frozen': 'high'})
+
+    def test_canonical_usdg_controls_are_expected_not_alarms(self):
+        info = {'freezeAuthority': 'F', 'mintAuthority': 'M', 'extensions': REGULATED + [ext('tokenMetadata', symbol='USDG', name='Global Dollar')]}
+        r = solana.mint_flags(USDG, info, solana.TOKEN_2022)
+        self.assertEqual({f['severity'] for f in r['flags']}, {'expected'})
+        self.assertEqual(r['known'], 'USDG (Paxos (Global Dollar))')
+
+    def test_fake_usdc_and_scam_metadata(self):
+        info = {'extensions': [ext('tokenMetadata', symbol='USDC', name='USD Coin - claim at usdc-bonus.io')]}
+        codes = {f['code'] for f in solana.mint_flags(FAKE, info, solana.TOKEN_2022)['flags']}
+        self.assertEqual(codes, {'fake_stablecoin', 'scam_metadata'})
+
+
+class SolanaScanTest(unittest.TestCase):
+    def call(self, fail_mints=False):
         def call(url, method, params):
-            if params[1]['programId'] == solana.PROGRAMS[1]:
-                return {'value': []}
-            return {'value': [{'pubkey': 'Acc1', 'account': {'data': {'parsed': {'info': {
-                'mint': 'Mint1', 'delegate': 'Bad1', 'delegatedAmount': {'uiAmountString': '50'}, 'state': 'initialized',
-                'tokenAmount': {'uiAmountString': '50'}}}}}}, {'pubkey': 'Acc2', 'account': {'data': {'parsed': {'info': {'mint': 'M2'}}}}}]}
-        report = solana.delegates('Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb', call=call)
+            if method == 'getTokenAccountsByOwner':
+                if params[1]['programId'] == solana.TOKEN:
+                    return {'value': [{'pubkey': 'Acc1', 'account': {'data': {'parsed': {'info': {
+                        'mint': USDG, 'delegate': 'Bad1', 'delegatedAmount': {'uiAmountString': '50'}, 'tokenAmount': {'uiAmountString': '50'}}}}}},
+                        {'pubkey': 'Acc2', 'account': {'data': {'parsed': {'info': {'mint': USDG, 'tokenAmount': {'uiAmountString': '1'}}}}}}]}
+                return {'value': [{'pubkey': 'Acc3', 'account': {'data': {'parsed': {'info': {'mint': FAKE, 'tokenAmount': {'uiAmountString': '9'}}}}}}]}
+            if method == 'getMultipleAccounts':
+                if fail_mints:
+                    raise OSError('rate limited')
+                infos = {USDG: {'extensions': REGULATED}, FAKE: {'extensions': [ext('permanentDelegate', delegate='X')]}}
+                return {'value': [{'owner': solana.TOKEN_2022, 'data': {'parsed': {'type': 'mint', 'info': infos[m]}}} for m in params[0]]}
+            raise AssertionError(method)
+        return call
+
+    def test_delegate_and_risky_mint_reported_expected_only_mint_hidden(self):
+        report = solana.scan(OWNER_SOL, call=self.call())
         self.assertFalse(report['incomplete'])
-        rows = report['accounts']
-        self.assertEqual([r['account'] for r in rows], ['Acc1'])
-        self.assertIn('delegate Bad1', rows[0]['flags'][0])
+        self.assertEqual(report['token_accounts'], 3)
+        self.assertEqual(sorted(a['account'] for a in report['accounts']), ['Acc1', 'Acc3'])  # Acc2 holds canonical USDG only
+        self.assertEqual(report['severity_counts']['high'], 2)  # delegate on Acc1 + permanent delegate of FAKE
+
+    def test_failed_mint_lookup_marks_report_incomplete(self):
+        report = solana.scan(OWNER_SOL, call=self.call(fail_mints=True))
+        self.assertTrue(report['incomplete'])
+        self.assertEqual(report['failed_queries'][0]['query'], 'getMultipleAccounts')
 
 
 class X402Test(unittest.TestCase):

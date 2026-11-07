@@ -2,15 +2,18 @@
 
 Read-only safety checks for crypto wallets. Standard library only, no keys, no transactions.
 
+**Try it in the browser (no install):** https://mfttt11.github.io/wallet-guard/ — a single static page that asks a Solana RPC for public data from your browser. Nothing is signed or sent anywhere else.
+
 - **EVM approvals:** finds ERC-20 `Approval` events of an owner in a block range, reads the current allowance and flags unlimited allowances and spenders without contract code.
 - **Fake tokens:** flags tokens that use a well-known symbol (USDC, USDT, DAI, WETH) at a non-canonical address, or advertise links/claims in their name.
-- **Solana delegates:** lists token accounts with a delegate (the Solana form of an approval), frozen accounts and Token-2022 accounts.
+- **Solana (SPL + Token-2022):** token-account delegates and frozen accounts; mint risks: PermanentDelegate, TransferHook, MintCloseAuthority, FreezeAuthority, MintAuthority, transfer fees, default-frozen accounts, pausable mints, and USDC / USDT / USDG / PYUSD look-alikes. Canonical regulated stablecoins (USDG and PYUSD carry a permanent delegate, a transfer hook and a close authority by design) are reported as `expected` issuer controls, not alarms.
 - **Paid API (optional, x402):** `serve` answers `402 Payment Required` with USDC payment requirements and runs the check after a facilitator verifies and settles the payment. **Status: optional module tested with simulated facilitator responses only. It is not a hosted service and has not processed a real payment.**
 
 ```bash
 python3 -m wallet_guard evm-approvals --chain base --owner 0xYourAddress --from-block 30000000 --to-block 30050000
 python3 -m wallet_guard evm-token --chain ethereum --token 0xTokenAddress
-python3 -m wallet_guard solana-delegates --owner YourSolanaAddress
+python3 -m wallet_guard solana-scan --owner YourSolanaAddress
+python3 -m wallet_guard solana-mint --mint 2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH
 python3 -m wallet_guard serve --pay-to 0xYourAddress --price 0.01 --network base-sepolia
 ```
 

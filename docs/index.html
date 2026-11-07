@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wallet-guard · Solana token risk scan</title>
+<meta name="description" content="Read-only Solana wallet scan: delegates, Token-2022 permanent delegate, transfer hook, close/freeze authority and fake stablecoins. Runs in your browser.">
+<style>
+  :root { --bg:#f7f7f5; --fg:#1b1b1b; --muted:#5f6368; --card:#fff; --line:#e3e3df; --high:#b3261e; --medium:#a15c00; --low:#3b6ea8; --ok:#1e7a46; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121212; --fg:#ececec; --muted:#a0a0a0; --card:#1d1d1d; --line:#2e2e2e; --high:#ff8a80; --medium:#ffb74d; --low:#90caf9; --ok:#81c995; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 20px; }
+  form { display:grid; gap:8px; grid-template-columns:1fr auto; }
+  input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; }
+  button { padding:10px 16px; border:0; border-radius:8px; background:var(--fg); color:var(--bg); font:inherit; cursor:pointer; }
+  details { grid-column:1 / -1; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-top:12px; overflow-wrap:anywhere; }
+  .sum { display:flex; gap:16px; flex-wrap:wrap; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:.8rem; border:1px solid currentColor; margin-right:6px; }
+  .high { color:var(--high); } .medium { color:var(--medium); } .low { color:var(--low); } .expected, .muted { color:var(--muted); } .ok { color:var(--ok); }
+  ul { margin:6px 0 0; padding-left:18px; }
+  code { font-size:.85em; }
+  footer { margin-top:32px; color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>wallet-guard</h1>
+  <p class="lead">Read-only Solana scan. Nothing is signed or sent; your browser asks a Solana RPC for public account data.</p>
+  <form id="f">
+    <input id="addr" placeholder="Solana wallet address" autocomplete="off" spellcheck="false" required>
+    <button type="submit">Scan</button>
+    <details><summary>RPC endpoint</summary><input id="rpc" value="https://api.mainnet-beta.solana.com" spellcheck="false"></details>
+  </form>
+  <div id="out" aria-live="polite"></div>
+  <footer>Checks: token-account delegates, frozen accounts, Token-2022 PermanentDelegate, TransferHook, MintCloseAuthority, FreezeAuthority,
+    MintAuthority, transfer fees, default-frozen accounts, pausable mints, and USDC/USDT/USDG/PYUSD look-alikes. Canonical regulated stablecoins
+    are shown as expected issuer controls. A failed RPC query marks the result incomplete. Source: <a href="https://github.com/MFTTT11/wallet-guard">github.com/MFTTT11/wallet-guard</a></footer>
+</main>
+<script>
+"use strict";
+const TOKEN = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", TOKEN_2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+const KNOWN = { "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": ["USDC", "Circle"], "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ["USDT", "Tether"],
+  "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": ["USDG", "Paxos (Global Dollar)"], "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo": ["PYUSD", "Paxos (PayPal USD)"] };
+const CANON = Object.fromEntries(Object.entries(KNOWN).map(([m, [s]]) => [s, m]));
+const PUBKEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+let id = 0;
+async function rpc(url, method, params) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }) });
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || "RPC error");
+  return j.result;
+}
+const flag = (severity, code, text) => ({ severity, code, text });
+function mintFlags(mint, info) {
+  const known = KNOWN[mint], issuer = known ? "expected" : null, ext = {};
+  for (const e of info.extensions || []) ext[e.extension] = e.state || {};
+  const f = [];
+  if (ext.permanentDelegate && ext.permanentDelegate.delegate) f.push(flag(issuer || "high", "permanent_delegate", "permanent delegate " + ext.permanentDelegate.delegate + " can transfer or burn tokens from any holder"));
+  if (ext.transferHook && ext.transferHook.programId) f.push(flag(issuer || "medium", "transfer_hook", "transfer hook program " + ext.transferHook.programId + " runs on every transfer"));
+  if (ext.mintCloseAuthority && ext.mintCloseAuthority.closeAuthority) f.push(flag(issuer || "medium", "close_authority", "mint can be closed by " + ext.mintCloseAuthority.closeAuthority));
+  if (info.freezeAuthority) f.push(flag(issuer || "medium", "freeze_authority", "freeze authority can freeze any holder's account"));
+  if (info.mintAuthority) f.push(flag(issuer || "low", "mint_authority", "mint authority can create new supply"));
+  const fee = ext.transferFeeConfig || {};
+  const bps = Math.max(0, ...["newerTransferFee", "olderTransferFee"].map(k => Number((fee[k] || {}).transferFeeBasisPoints || 0)));
+  if (bps > 0) f.push(flag(issuer || (bps >= 1000 ? "high" : "medium"), "transfer_fee", "transfer fee " + (bps / 100).toFixed(2) + "% on every transfer"));
+  if (String((ext.defaultAccountState || {}).accountState || "").toLowerCase() === "frozen") f.push(flag(issuer || "high", "default_frozen", "new token accounts start frozen"));
+  if (ext.pausableConfig) f.push(flag(issuer || "medium", "pausable", "issuer can pause all transfers"));
+  if (ext.nonTransferable) f.push(flag("low", "non_transferable", "tokens cannot be transferred"));
+  const md = ext.tokenMetadata || {}, sym = String(md.symbol || "").trim(), norm = sym.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (CANON[norm] && CANON[norm] !== mint) f.push(flag("high", "fake_stablecoin", "symbol " + sym + " but not the canonical " + norm + " mint"));
+  if (/https?:\/\/|www\.|\.com|\.io|claim|airdrop|visit/i.test((md.name || "") + " " + sym)) f.push(flag("high", "scam_metadata", "name or symbol advertises a link or claim"));
+  return { mint, known: known ? known[0] + " (" + known[1] + ")" : null, symbol: sym || (known ? known[0] : null), flags: f };
+}
+async function scan(owner, url) {
+  const accounts = [], failed = [], mints = {};
+  for (const program of [TOKEN, TOKEN_2022]) {
+    try {
+      const res = await rpc(url, "getTokenAccountsByOwner", [owner, { programId: program }, { encoding: "jsonParsed", commitment: "finalized" }]);
+      for (const acc of res.value || []) {
+        const info = ((acc.account || {}).data || {}).parsed?.info || {}, f = [];
+        if (info.delegate) f.push(flag("high", "delegate", "delegate " + info.delegate + " may move " + ((info.delegatedAmount || {}).uiAmountString || "?") + " tokens"));
+        if (info.state === "frozen") f.push(flag("medium", "frozen", "account is frozen by the mint authority"));
+        accounts.push({ account: acc.pubkey, mint: info.mint, amount: (info.tokenAmount || {}).uiAmountString, flags: f });
+        if (info.mint) mints[info.mint] = program;
+      }
+    } catch (e) { failed.push("getTokenAccountsByOwner (" + (program === TOKEN ? "SPL" : "Token-2022") + "): " + e.message); }
+  }
+  const keys = Object.keys(mints), reports = {};
+  for (let i = 0; i < keys.length; i += 100) {
+    const batch = keys.slice(i, i + 100);
+    try {
+      const res = await rpc(url, "getMultipleAccounts", [batch, { encoding: "jsonParsed", commitment: "finalized" }]);
+      (res.value || []).forEach((v, k) => { const p = ((v || {}).data || {}).parsed; if (p && p.type === "mint") reports[batch[k]] = mintFlags(batch[k], p.info || {}); else failed.push("mint " + batch[k] + " unreadable"); });
+    } catch (e) { failed.push("getMultipleAccounts: " + e.message); }
+  }
+  for (const a of accounts) a.mintReport = reports[a.mint] || null;
+  return { accounts, failed };
+}
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+function render(owner, r) {
+  const out = document.getElementById("out"); out.replaceChildren();
+  const counts = { high: 0, medium: 0, low: 0, expected: 0 };
+  const risky = r.accounts.filter(a => { const fl = a.flags.concat((a.mintReport || {}).flags || []); fl.forEach(x => counts[x.severity]++); return a.flags.length || fl.some(x => x.severity !== "expected"); });
+  const sum = el("div", "card sum");
+  sum.append(el("span", "", r.accounts.length + " token accounts"), el("span", "high", counts.high + " high"), el("span", "medium", counts.medium + " medium"),
+    el("span", "low", counts.low + " low"), el("span", r.failed.length ? "high" : "ok", r.failed.length ? "INCOMPLETE — not a clean result" : "complete scan"));
+  out.append(sum);
+  if (r.failed.length) { const c = el("div", "card"); c.append(el("strong", "high", "Failed queries")); const ul = el("ul"); r.failed.forEach(x => ul.append(el("li", "", x))); c.append(ul); out.append(c); }
+  if (!risky.length && !r.failed.length) out.append(el("div", "card ok", "No delegates, risky mint controls or look-alike stablecoins found for this wallet."));
+  for (const a of risky) {
+    const c = el("div", "card"), m = a.mintReport || {};
+    c.append(el("div", "", (m.known || m.symbol || "unknown token") + " · " + (a.amount || "?")), el("code", "muted", "mint " + a.mint));
+    const ul = el("ul");
+    for (const x of a.flags.concat(m.flags || [])) { const li = el("li"); li.append(el("span", "pill " + x.severity, x.severity), document.createTextNode(x.text)); ul.append(li); }
+    c.append(ul); out.append(c);
+  }
+}
+document.getElementById("f").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const owner = document.getElementById("addr").value.trim(), url = document.getElementById("rpc").value.trim(), out = document.getElementById("out");
+  if (!PUBKEY.test(owner)) { out.replaceChildren(el("div", "card high", "Not a valid Solana address.")); return; }
+  out.replaceChildren(el("div", "card muted", "Scanning…"));
+  try { render(owner, await scan(owner, url)); } catch (e) { out.replaceChildren(el("div", "card high", "Scan failed: " + e.message)); }
+});
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
     "FUNDING.json",
     "LICENSE",
     "README.md",
+    "docs/index.html",
     "pyproject.toml",
     "tests/__init__.py",
     "tests/test_wallet_guard.py",
