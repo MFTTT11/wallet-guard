@@ -1,0 +1,8 @@
+[project]
+name = "wallet-guard"
+version = "0.1.0"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[project.scripts]
+wallet-guard = "wallet_guard.__main__:main"
