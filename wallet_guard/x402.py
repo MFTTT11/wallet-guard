@@ -5,6 +5,9 @@ requirements. With one, it asks a facilitator to verify the payment, runs the
 check, asks the facilitator to settle and returns the result with an
 X-PAYMENT-RESPONSE header. The facilitator does the cryptography; this module
 never holds keys.
+
+Status: optional, tested only with simulated facilitator responses; it is not
+a hosted service and has not processed a real payment.
 """
 from __future__ import annotations
 

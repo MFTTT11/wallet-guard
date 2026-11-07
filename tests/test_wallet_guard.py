@@ -28,9 +28,27 @@ class EvmTest(unittest.TestCase):
             if method == 'eth_getCode':
                 return '0x6080' if params[0] == SPENDER else '0x'
             raise AssertionError(method)
-        rows = evm.approvals('base', OWNER, 100, 5000, call=call)
+        report = evm.approvals('base', OWNER, 100, 5000, call=call)
+        self.assertEqual((report['incomplete'], report['failed_queries'], report['scanned_block_range']), (False, [], [100, 5000]))
+        rows = report['approvals']
         self.assertEqual({r['spender']: r['flags'] for r in rows},
                          {SPENDER: ['unlimited allowance'], EOA: ['spender has no contract code (EOA): it can move these tokens directly']})
+
+    def test_failed_queries_make_the_report_incomplete(self):
+        from wallet_guard import rpc
+        def call(url, method, params):
+            if method == 'eth_getLogs' and params[0]['fromBlock'] == hex(2100):
+                raise rpc.RpcError('query returned more than 10000 results')
+            if method == 'eth_getLogs':
+                t = lambda a: '0x' + '0' * 24 + a[2:]
+                return [{'address': TOKEN, 'topics': [evm.APPROVAL_TOPIC, t(OWNER), t(SPENDER)]}]
+            if method == 'eth_call':
+                raise OSError('timeout')
+            raise AssertionError(method)
+        report = evm.approvals('base', OWNER, 100, 4000, call=call)
+        self.assertTrue(report['incomplete'])
+        self.assertEqual([q['query'] for q in report['failed_queries']], ['eth_getLogs', 'allowance'])
+        self.assertEqual(report['approvals'], [])
 
     def test_fake_usdc_is_flagged(self):
         def call(url, method, params):
@@ -54,7 +72,9 @@ class SolanaTest(unittest.TestCase):
             return {'value': [{'pubkey': 'Acc1', 'account': {'data': {'parsed': {'info': {
                 'mint': 'Mint1', 'delegate': 'Bad1', 'delegatedAmount': {'uiAmountString': '50'}, 'state': 'initialized',
                 'tokenAmount': {'uiAmountString': '50'}}}}}}, {'pubkey': 'Acc2', 'account': {'data': {'parsed': {'info': {'mint': 'M2'}}}}}]}
-        rows = solana.delegates('Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb', call=call)
+        report = solana.delegates('Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb', call=call)
+        self.assertFalse(report['incomplete'])
+        rows = report['accounts']
         self.assertEqual([r['account'] for r in rows], ['Acc1'])
         self.assertIn('delegate Bad1', rows[0]['flags'][0])
 

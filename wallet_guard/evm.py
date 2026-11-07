@@ -73,33 +73,48 @@ def impersonation_flags(chain, token, symbol, name=None):
 
 
 def approvals(chain, owner, from_block, to_block, step=2000, call=rpc.call):
-    """Current non-zero allowances granted by owner in the block range, with risk flags."""
+    """Current non-zero allowances granted by owner in the block range, with risk flags.
+
+    Every failed RPC query is listed; when any query fails the report says
+    incomplete: true, because a partial scan must never read as "safe".
+    """
     url = rpc.EVM_RPC[chain]
     owner = _addr(owner)
     if to_block < from_block or to_block - from_block > 2_000_000:
         raise ValueError('block range must be ascending and at most 2,000,000 blocks')
-    pairs = set()
+    pairs, failed = set(), []
     for start in range(from_block, to_block + 1, step):
-        logs = call(url, 'eth_getLogs', [{'fromBlock': hex(start), 'toBlock': hex(min(start + step - 1, to_block)),
-                                          'topics': [APPROVAL_TOPIC, _topic(owner)]}])
+        end = min(start + step - 1, to_block)
+        try:
+            logs = call(url, 'eth_getLogs', [{'fromBlock': hex(start), 'toBlock': hex(end),
+                                              'topics': [APPROVAL_TOPIC, _topic(owner)]}])
+        except (rpc.RpcError, OSError, ValueError) as exc:
+            failed.append({'query': 'eth_getLogs', 'blocks': [start, end], 'error': f'{type(exc).__name__}: {exc}'[:160]})
+            continue
         for log in logs or []:
             topics = log.get('topics') or []
             if len(topics) >= 3:
                 pairs.add((log['address'].lower(), '0x' + topics[2][-40:].lower()))
-    out = []
+    found = []
     for token, spender in sorted(pairs):
         data = '0xdd62ed3e' + owner[2:].rjust(64, '0') + spender[2:].rjust(64, '0')
         try:
             allowance = int(call(url, 'eth_call', [{'to': token, 'data': data}, 'latest']), 16)
-        except (rpc.RpcError, ValueError, TypeError):
+        except (rpc.RpcError, OSError, ValueError, TypeError) as exc:
+            failed.append({'query': 'allowance', 'token': token, 'spender': spender, 'error': f'{type(exc).__name__}: {exc}'[:160]})
             continue
         if allowance == 0:
             continue
         flags = []
         if allowance >= UNLIMITED:
             flags.append('unlimited allowance')
-        code = call(url, 'eth_getCode', [spender, 'latest'])
-        if code in (None, '0x', '0x0'):
-            flags.append('spender has no contract code (EOA): it can move these tokens directly')
-        out.append({'token': token, 'spender': spender, 'allowance': str(allowance), 'flags': flags})
-    return out
+        try:
+            code = call(url, 'eth_getCode', [spender, 'latest'])
+            if code in (None, '0x', '0x0'):
+                flags.append('spender has no contract code (EOA): it can move these tokens directly')
+        except (rpc.RpcError, OSError, ValueError) as exc:
+            failed.append({'query': 'eth_getCode', 'address': spender, 'error': f'{type(exc).__name__}: {exc}'[:160]})
+            flags.append('spender code unknown (query failed)')
+        found.append({'token': token, 'spender': spender, 'allowance': str(allowance), 'flags': flags})
+    return {'chain': chain, 'owner': owner, 'scanned_block_range': [from_block, to_block],
+            'incomplete': bool(failed), 'failed_queries': failed, 'approvals': found}

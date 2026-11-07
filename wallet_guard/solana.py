@@ -10,11 +10,16 @@ PUBKEY = re.compile(r'[1-9A-HJ-NP-Za-km-z]{32,44}\Z')
 
 
 def delegates(owner, call=rpc.call, url=rpc.SOLANA_RPC):
+    """Token accounts with a delegate, frozen state or Token-2022 hooks; failed queries make the report incomplete."""
     if not isinstance(owner, str) or not PUBKEY.fullmatch(owner):
         raise ValueError('invalid Solana address')
-    out = []
+    out, failed = [], []
     for program in PROGRAMS:
-        res = call(url, 'getTokenAccountsByOwner', [owner, {'programId': program}, {'encoding': 'jsonParsed', 'commitment': 'finalized'}])
+        try:
+            res = call(url, 'getTokenAccountsByOwner', [owner, {'programId': program}, {'encoding': 'jsonParsed', 'commitment': 'finalized'}])
+        except (rpc.RpcError, OSError, ValueError) as exc:
+            failed.append({'query': 'getTokenAccountsByOwner', 'program': program, 'error': f'{type(exc).__name__}: {exc}'[:160]})
+            continue
         for acc in (res or {}).get('value', []):
             info = (((acc.get('account') or {}).get('data') or {}).get('parsed') or {}).get('info') or {}
             flags = []
@@ -27,4 +32,4 @@ def delegates(owner, call=rpc.call, url=rpc.SOLANA_RPC):
             if flags:
                 out.append({'account': acc.get('pubkey'), 'mint': info.get('mint'),
                             'amount': (info.get('tokenAmount') or {}).get('uiAmountString'), 'flags': flags})
-    return out
+    return {'owner': owner, 'programs_scanned': list(PROGRAMS), 'incomplete': bool(failed), 'failed_queries': failed, 'accounts': out}

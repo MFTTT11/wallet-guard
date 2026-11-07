@@ -1,0 +1,17 @@
+{
+  "managed_by": "MFTTT11 release workflow",
+  "files": [
+    "FUNDING.json",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+    "tests/__init__.py",
+    "tests/test_wallet_guard.py",
+    "wallet_guard/__init__.py",
+    "wallet_guard/__main__.py",
+    "wallet_guard/evm.py",
+    "wallet_guard/rpc.py",
+    "wallet_guard/solana.py",
+    "wallet_guard/x402.py"
+  ]
+}
