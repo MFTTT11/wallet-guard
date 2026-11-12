@@ -44,6 +44,25 @@ Revoke risky approvals with your wallet or a revoke tool; wallet-guard only repo
 
 Chains: ethereum, base, arbitrum, optimism, polygon, solana.
 
+## Support & Pro API / Audit Access
+
+Non-custodial support for continuous open-source security research, scanner maintenance, and custom audit modeling.
+
+- **EVM Treasury (Base / Arbitrum / Ethereum):** `0x80Be98bED7FB4478135525B47Dc1a181DD164646`
+- **Solana Treasury (USDC / SOL):** `Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb`
+
+### Self-Hosted x402 API Gateway & Direct On-Chain Verification
+
+1. **Self-Hosted x402 Gateway:**
+   Run the local x402 payment-gated microservice:
+   ```bash
+   python3 -m wallet_guard serve --pay-to 0x80Be98bED7FB4478135525B47Dc1a181DD164646 --price 0.01 --network base
+   ```
+   Without an `X-PAYMENT` header, requests return HTTP `402 Payment Required` detailing exact payment specs. With a valid payment settlement header from an x402 facilitator, the query executes and returns the audit result.
+
+2. **Direct On-Chain Verification:**
+   Send contributions (USDC, ETH, or SOL) directly to the non-custodial treasury addresses above. Verify transaction execution natively on block explorers (BaseScan, Arbiscan, Etherscan, or Solscan).
+
 ```bash
 python3 -m unittest discover -s tests
 ```
