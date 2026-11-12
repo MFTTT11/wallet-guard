@@ -37,22 +37,22 @@
   </form>
   <div id="out" aria-live="polite"></div>
   <section class="card" style="margin-top:28px;">
-    <h2 style="font-size:1.15rem; margin:0 0 8px;">Support &amp; Pro API / Audit Access</h2>
+    <h2 style="font-size:1.15rem; margin:0 0 8px;">Voluntary Open-Source Support &amp; Self-Hosted Gateway</h2>
     <p style="color:var(--muted); margin:0 0 12px; font-size:.9rem;">
-      Non-custodial support for continuous open-source security research, automated scanner infra, and priority custom audit models.
+      Voluntary non-custodial support for continuous open-source security research and scanner tooling. Contributions are voluntary donations and do not automatically grant a hosted SaaS subscription or API key (there is no active hosted paid API server).
     </p>
     <div style="font-size:.88rem; line-height:1.6;">
-      <div><strong>EVM Treasury (Base / Arbitrum / Ethereum):</strong></div>
+      <div><strong>EVM Support Address (Base / Arbitrum / Ethereum):</strong></div>
       <code style="word-break:break-all; display:block; padding:4px 8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; margin:4px 0 10px;">0x80Be98bED7FB4478135525B47Dc1a181DD164646</code>
-      <div><strong>Solana Treasury (USDC / SOL):</strong></div>
+      <div><strong>Solana Support Address (USDC / SOL):</strong></div>
       <code style="word-break:break-all; display:block; padding:4px 8px; background:var(--bg); border:1px solid var(--line); border-radius:6px; margin:4px 0 10px;">Ei7wdUkFQPs5kw843NA8kXsPw5qSbNRE3PcSAUoHw7Qb</code>
     </div>
     <div style="margin-top:12px; font-size:.85rem; color:var(--muted);">
-      <strong>Self-Hosted x402 API Gateway &amp; On-Chain Verification:</strong>
+      <strong>Self-Hosted x402 Example &amp; Local Verification:</strong>
       <ul style="margin:4px 0 0; padding-left:18px;">
         <li>Run self-hosted x402 gateway: <code>python3 -m wallet_guard serve --pay-to 0x80Be98bED7FB4478135525B47Dc1a181DD164646 --price 0.01 --network base</code></li>
-        <li>Without payment header, service responds with HTTP <code>402 Payment Required</code> specifying micro-payment requirements.</li>
-        <li>Direct on-chain verification: Send USDC / SOL / ETH directly to the vaults above. Confirm transaction hashes on BaseScan, Arbiscan, Etherscan, or Solscan.</li>
+        <li>Status: optional local module tested with simulated facilitator responses; no hosted paid API server active.</li>
+        <li>Without payment header, local service responds with HTTP <code>402 Payment Required</code> specifying micro-payment requirements.</li>
       </ul>
     </div>
   </section>
