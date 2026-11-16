@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://mfttt11.github.io/wallet-guard/sitemap.xml
